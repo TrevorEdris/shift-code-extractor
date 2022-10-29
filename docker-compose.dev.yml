@@ -1,0 +1,48 @@
+version: '3'
+services:
+  app:
+    build:
+      context: container
+      dockerfile: dev.Dockerfile
+    container_name: app
+    environment:
+      - KEY=value
+    volumes:
+      - ./:/app
+      - type: bind
+        source: /run/host-services/ssh-auth.sock
+        target: /run/host-services/ssh-auth.sock
+    restart: unless-stopped
+    ports:
+      - '8000:8000'
+    links:
+      - aws
+    networks:
+      app-network:
+        ipv4_address: 172.10.0.2
+
+  aws:
+    image: localstack/localstack
+    ports:
+      - '4566:4566'
+    environment:
+      - SERVICES=dynamodb,sns,lambda,events
+      - DEBUG=${DEBUG-}
+      - DATA_DIR=${DATA_DIR-}
+      - LAMBDA_EXECUTOR=${LAMBDA_EXECUTOR-}
+      - HOST_TMP_FOLDER=${TMPDIR:-/tmp/}localstack
+      - DOCKER_HOST=unix:///var/run/docker.sock
+    volumes:
+      - "${TMPDIR:-/tmp}/localstack:/tmp/localstack"
+      - "/var/run/docker.sock:/var/run/docker.sock"
+    networks:
+      app-network:
+        ipv4_address: 172.10.0.3
+
+networks:
+  app-network:
+    name: 'app-network'
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.10.0.0/16
