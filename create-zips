@@ -1,0 +1,6 @@
+#!/bin/bash
+
+zip -r bin/extractor.zip bin/extractor
+zip -r bin/login.zip bin/login
+zip -r bin/subscribe.zip bin/subscribe
+zip -r bin/subscribeui.zip bin/subscribeui
