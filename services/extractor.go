@@ -16,12 +16,12 @@ import (
 
 type (
 	Extractor struct {
-		cfg            *config
+		cfg            *Config
 		discordSession *discordgo.Session
 		logger         *zap.Logger
 	}
 
-	config struct {
+	Config struct {
 		Channel string `env:"CHANNEL_ID,required"`
 		Token   string `env:"BOT_TOKEN,required"`
 	}
@@ -49,7 +49,7 @@ func ExtractorHandler(ctx context.Context, event events.CloudWatchEvent) error {
 	if !initialized {
 		err := initialize()
 		if err != nil {
-			return err
+			return fmt.Errorf("failed to initalize lambda: %w", err)
 		}
 	}
 	err := extractor.Extract()
@@ -64,19 +64,19 @@ func ExtractorHandler(ctx context.Context, event events.CloudWatchEvent) error {
 func initialize() error {
 	l, err := initLogging()
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to initLogging: %w", err)
 	}
 	cfg, err := initConfig()
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to initConfig: %w", err)
 	}
 	extractor, err = initExtractor(cfg, l)
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to initExtractor: %w", err)
 	}
 
 	initialized = true
-	l.Info("Successfully initialized extractor")
+	l.Info("Successfully initialized")
 
 	return nil
 }
@@ -89,36 +89,36 @@ func initLogging() (*zap.Logger, error) {
 	return l, nil
 }
 
-func initConfig() (*config, error) {
+func initConfig() (*Config, error) {
 	// Attempt to load a .env file, but if it errors out and it's NOT a IsNotExist error, then
 	// there was a problem parsing the .env file
 	err := godotenv.Load()
 	if err != nil && !os.IsNotExist(err) {
-		return nil, err
+		return nil, fmt.Errorf("failed to parse .env file: %w", err)
 	}
 
 	// Initialize the cfg variable
-	var cfg *config
+	var cfg *Config
 	err = envdecode.StrictDecode(cfg)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to StrictDecode config: %w", err)
 	}
 
 	// Perform any custom validation steps
 	err = cfg.Validate()
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to Validate config: %w", err)
 	}
 
 	return cfg, nil
 }
 
 // probably doesn't _need_ to be a separate function, but it matches the pattern of the other funcs
-func initExtractor(cfg *config, logger *zap.Logger) (*Extractor, error) {
+func initExtractor(cfg *Config, logger *zap.Logger) (*Extractor, error) {
 	// Create a discord session using the bot token in the config variable
 	dg, err := discordgo.New("Bot " + cfg.Token)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to initialize discordgo session: %w", err)
 	}
 
 	e := NewExtractor(cfg, dg, logger)
@@ -126,11 +126,11 @@ func initExtractor(cfg *config, logger *zap.Logger) (*Extractor, error) {
 
 }
 
-func (c *config) Validate() error {
+func (c *Config) Validate() error {
 	return nil
 }
 
-func NewExtractor(cfg *config, session *discordgo.Session, logger *zap.Logger) *Extractor {
+func NewExtractor(cfg *Config, session *discordgo.Session, logger *zap.Logger) *Extractor {
 	return &Extractor{
 		cfg:            cfg,
 		discordSession: session,
@@ -187,7 +187,7 @@ func (e *Extractor) Extract() error {
 			},
 		)
 		if err != nil {
-			return err
+			return fmt.Errorf("failed to send embedded message: %w", err)
 		}
 		e.logger.Info("Sent", zap.String("msg", msg.Content), zap.String("channelID", msg.ChannelID))
 	}
