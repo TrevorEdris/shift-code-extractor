@@ -47,7 +47,10 @@ var (
 
 func ExtractorHandler(ctx context.Context, event events.CloudWatchEvent) error {
 	if !initialized {
-		initialize()
+		err := initialize()
+		if err != nil {
+			return err
+		}
 	}
 	err := extractor.Extract()
 	if err != nil {
@@ -58,56 +61,69 @@ func ExtractorHandler(ctx context.Context, event events.CloudWatchEvent) error {
 	return nil
 }
 
-func initialize() {
-	l := initLogging()
-	cfg := initConfig()
-	initExtractor(cfg, l)
+func initialize() error {
+	l, err := initLogging()
+	if err != nil {
+		return err
+	}
+	cfg, err := initConfig()
+	if err != nil {
+		return err
+	}
+	extractor, err = initExtractor(cfg, l)
+	if err != nil {
+		return err
+	}
 
 	initialized = true
 	l.Info("Successfully initialized extractor")
+
+	return nil
 }
 
-func initLogging() *zap.Logger {
+func initLogging() (*zap.Logger, error) {
 	l, err := zap.NewProduction()
 	if err != nil {
-		panic(err)
+		return nil, err
 	}
-	return l
+	return l, nil
 }
 
-func initConfig() *config {
+func initConfig() (*config, error) {
 	// Attempt to load a .env file, but if it errors out and it's NOT a IsNotExist error, then
 	// there was a problem parsing the .env file
 	err := godotenv.Load()
 	if err != nil && !os.IsNotExist(err) {
-		panic(err)
+		return nil, err
 	}
 
 	// Initialize the cfg variable
 	var cfg *config
 	err = envdecode.StrictDecode(cfg)
 	if err != nil {
-		panic(err)
+		return nil, err
 	}
 
 	// Perform any custom validation steps
 	err = cfg.Validate()
 	if err != nil {
-		panic(err)
+		return nil, err
 	}
 
-	return cfg
+	return cfg, nil
 }
 
 // probably doesn't _need_ to be a separate function, but it matches the pattern of the other funcs
-func initExtractor(cfg *config, logger *zap.Logger) {
+func initExtractor(cfg *config, logger *zap.Logger) (*Extractor, error) {
 	// Create a discord session using the bot token in the config variable
 	dg, err := discordgo.New("Bot " + cfg.Token)
 	if err != nil {
-		panic(err)
+		return nil, err
 	}
 
-	extractor = NewExtractor(cfg, dg, logger)
+	e := NewExtractor(cfg, dg, logger)
+	return e, nil
+
 }
 
 func (c *config) Validate() error {
@@ -141,7 +157,7 @@ func (e *Extractor) Extract() error {
 	e.logger.Info("Sending messages to channel CHANNEL_ID", zap.Int("count", len(codes)))
 	now := time.Now().Format(time.RFC3339)
 	for _, code := range codes {
-		e.discordSession.ChannelMessageSendEmbed(
+		msg, err := e.discordSession.ChannelMessageSendEmbed(
 			e.cfg.Channel,
 			&discordgo.MessageEmbed{
 				Author:      &discordgo.MessageEmbedAuthor{},
@@ -170,6 +186,10 @@ func (e *Extractor) Extract() error {
 				Title:     fmt.Sprintf("Babe! It's %s, time for your new Shift Code!", now),
 			},
 		)
+		if err != nil {
+			return err
+		}
+		e.logger.Info("Sent", zap.String("msg", msg.Content), zap.String("channelID", msg.ChannelID))
 	}
-	return errNotImplemented
+	return nil
 }

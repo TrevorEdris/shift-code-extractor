@@ -1,6 +1,6 @@
 GOOS := linux
 
-all: binaries
+all: zip
 
 .PHONY: bin
 bin:
@@ -26,5 +26,5 @@ subscribeui: bin
 binaries: extractor login subscribe subscribeui
 
 .PHONY: zip
-zip:
+zip: binaries
 	./create-zips
