@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"time"
 
 	"github.com/aws/aws-lambda-go/events"
 	"github.com/bwmarrin/discordgo"
@@ -26,10 +27,14 @@ type (
 	}
 
 	shiftCode struct {
-		key string
-		game string
+		key     string
+		game    string
 		expires time.Time
 	}
+)
+
+const (
+	imageURL = `https://www.google.com/url?sa=i&url=https%3A%2F%2Fimgflip.com%2Fmemegenerator%2F255512681%2FBabe-Its-4PM-time-for-your&psig=AOvVaw0thNF3wktdXGoLEFlP8xbc&ust=1667528646255000&source=images&cd=vfe&ved=0CAwQjRxqFwoTCJiW47b6kPsCFQAAAAAdAAAAABAE`
 )
 
 var (
@@ -46,7 +51,7 @@ func ExtractorHandler(ctx context.Context, event events.CloudWatchEvent) error {
 	}
 	err := extractor.Extract()
 	if err != nil {
-		logger.Error("Error extracting keys", zap.Error(err))
+		extractor.logger.Error("failed to extract keys", zap.Error(err))
 		return fmt.Errorf("failed to extract keys: %w", err)
 	}
 
@@ -56,10 +61,10 @@ func ExtractorHandler(ctx context.Context, event events.CloudWatchEvent) error {
 func initialize() {
 	l := initLogging()
 	cfg := initConfig()
-	initExtractor(cfg)
+	initExtractor(cfg, l)
 
 	initialized = true
-	logger.Info("Successfully initialized extractor")
+	l.Info("Successfully initialized extractor")
 }
 
 func initLogging() *zap.Logger {
@@ -97,22 +102,23 @@ func initConfig() *config {
 // probably doesn't _need_ to be a separate function, but it matches the pattern of the other funcs
 func initExtractor(cfg *config, logger *zap.Logger) {
 	// Create a discord session using the bot token in the config variable
-	dg, err := discordgo.new("Bot " + cfg.Token)
+	dg, err := discordgo.New("Bot " + cfg.Token)
 	if err != nil {
 		panic(err)
 	}
 
-	extractor = NewExtractor(cfg, logger)
+	extractor = NewExtractor(cfg, dg, logger)
 }
 
 func (c *config) Validate() error {
 	return nil
 }
 
-func NewExtractor(cfg *config, logger *zap.Logger) *Extractor {
+func NewExtractor(cfg *config, session *discordgo.Session, logger *zap.Logger) *Extractor {
 	return &Extractor{
-		cfg:    cfg,
-		logger: logger,
+		cfg:            cfg,
+		discordSession: session,
+		logger:         logger,
 	}
 }
 
@@ -125,9 +131,9 @@ func (e *Extractor) Extract() error {
 	// TODO: Future PR, generate []shiftCode and send a message for each one
 	codes := []shiftCode{
 		{
-			game: "TODO - @MuchUsername implement this shit",
-			key: "abcdefgh-1234-567-9810-abcdefghijkl",
-			expires: time.Now().Add(time.Day),
+			game:    "TODO - @MuchUsername implement this shit",
+			key:     "abcdefgh-1234-567-9810-abcdefghijkl",
+			expires: time.Now().Add(24 * time.Hour),
 		},
 	}
 
@@ -138,36 +144,31 @@ func (e *Extractor) Extract() error {
 		e.discordSession.ChannelMessageSendEmbed(
 			e.cfg.Channel,
 			&discordgo.MessageEmbed{
-				Author: &discordgo.MessageEmbedAuthor{},
-				Color: 0x00ff00, // Green
+				Author:      &discordgo.MessageEmbedAuthor{},
+				Color:       0x00ff00,
 				Description: "Shift code",
-				Fields []*discordgo.MessageEmbedField{
-					&discordgo.MessageEmbedField{
-						Name: "Game",
-						Value: code.game,
+				Fields: []*discordgo.MessageEmbedField{
+					{
+						Name:   "Game",
+						Value:  code.game,
 						Inline: true,
 					},
-					&discordgo.MessageEmbedField{
-						Name: "Key",
-						Value: code.key,
+					{
+						Name:   "Key",
+						Value:  code.key,
 						Inline: true,
 					},
-					&discordgo.MessageEmbedField{
-						Name: "Expires",
-						Value: code.expires.Format(time.RFC3339),
+					{
+						Name:   "Expires",
+						Value:  code.expires.Format(time.RFC3339),
 						Inline: true,
 					},
 				},
+				Image:     &discordgo.MessageEmbedImage{URL: imageURL},
+				Thumbnail: &discordgo.MessageEmbedThumbnail{URL: imageURL},
+				Timestamp: now,
+				Title:     fmt.Sprintf("Babe! It's %s, time for your new Shift Code!", now),
 			},
-			Image: &discordgo.MessageEmbedImage{
-				// TODO: I'd be surprised if this works lmao
-				URL: "https://www.google.com/url?sa=i&url=https%3A%2F%2Fimgflip.com%2Fmemegenerator%2F255512681%2FBabe-Its-4PM-time-for-your&psig=AOvVaw0thNF3wktdXGoLEFlP8xbc&ust=1667528646255000&source=images&cd=vfe&ved=0CAwQjRxqFwoTCJiW47b6kPsCFQAAAAAdAAAAABAE",
-			},
-			Thumbnail: &discordgo.MessageEmbedThumbnail{
-				URL: "https://www.google.com/url?sa=i&url=https%3A%2F%2Fimgflip.com%2Fmemegenerator%2F255512681%2FBabe-Its-4PM-time-for-your&psig=AOvVaw0thNF3wktdXGoLEFlP8xbc&ust=1667528646255000&source=images&cd=vfe&ved=0CAwQjRxqFwoTCJiW47b6kPsCFQAAAAAdAAAAABAE",
-			},
-			Timestamp: now,
-			Title: fmt.Sprintf("Babe! It's %s, time for your new Shift Code!", now),
 		)
 	}
 	return errNotImplemented
